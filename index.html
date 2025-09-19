@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zephiryx Mail</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const App = () => {
+      const [user, setUser] = useState(null);
+      const [emails, setEmails] = useState([]);
+      const [view, setView] = useState('login');
+      const [emailData, setEmailData] = useState({ to: '', subject: '', body: '' });
+      const [credentials, setCredentials] = useState({ username: '', password: '' });
+
+      useEffect(() => {
+        if (user && view === 'inbox') {
+          const interval = setInterval(fetchEmails, 5000);
+          return () => clearInterval(interval);
+        }
+      }, [user, view]);
+
+      const login = async () => {
+        try {
+          const response = await axios.post('/api/login', credentials);
+          localStorage.setItem('token', response.data.token);
+          setUser({ username: credentials.username, email: `${credentials.username}@zephiryx.com` });
+          setView('inbox');
+          fetchEmails();
+        } catch (error) {
+          alert('Error al iniciar sesión: ' + (error.response?.data?.error || error.message));
+        }
+      };
+
+      const register = async () => {
+        try {
+          await axios.post('/api/register', credentials);
+          alert('Usuario registrado. Inicia sesión.');
+          setCredentials({ username: '', password: '' });
+        } catch (error) {
+          alert('Error al registrar: ' + (error.response?.data?.error || error.message));
+        }
+      };
+
+      const fetchEmails = async () => {
+        try {
+          const response = await axios.get('/api/emails', {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          setEmails(response.data);
+        } catch (error) {
+          console.error('Error al cargar correos');
+        }
+      };
+
+      const sendEmail = async () => {
+        try {
+          await axios.post('/api/emails', {
+            ...emailData,
+            from: user.email
+          }, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          setEmailData({ to: '', subject: '', body: '' });
+          setView('inbox');
+          fetchEmails();
+        } catch (error) {
+          alert('Error al enviar correo: ' + (error.response?.data?.error || error.message));
+        }
+      };
+
+      const logout = () => {
+        localStorage.removeItem('token');
+        setUser(null);
+        setView('login');
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4">
+          <h1 className="text-3xl font-bold mb-4">Zephiryx Mail</h1>
+          {view === 'login' && !user && (
+            <div className="w-full max-w-md bg-white p-6 rounded-lg shadow-md">
+              <h2 className="text-xl font-semibold mb-4">Iniciar Sesión</h2>
+              <input
+                type="text"
+                placeholder="Nombre de usuario"
+                value={credentials.username}
+                onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
+                className="w-full p-2 mb-2 border rounded"
+              />
+              <input
+                type="password"
+                placeholder="Contraseña"
+                value={credentials.password}
+                onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                className="w-full p-2 mb-2 border rounded"
+              />
+              <div className="flex space-x-2">
+                <button onClick={login} className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
+                  Iniciar Sesión
+                </button>
+                <button onClick={register} className="bg-green-500 text-white p-2 rounded hover:bg-green-600">
+                  Registrarse
+                </button>
+              </div>
+            </div>
+          )}
+          {user && view === 'inbox' && (
+            <div className="w-full max-w-4xl bg-white p-6 rounded-lg shadow-md">
+              <div className="flex justify-between mb-4">
+                <h2 className="text-xl font-semibold">Bandeja de Entrada ({user.email})</h2>
+                <div>
+                  <button
+                    onClick={() => setView('compose')}
+                    className="bg-blue-500 text-white p-2 rounded mr-2 hover:bg-blue-600"
+                  >
+                    Redactar
+                  </button>
+                  <button onClick={logout} className="bg-red-500 text-white p-2 rounded hover:bg-red-600">
+                    Cerrar Sesión
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {emails.map((email) => (
+                  <div key={email.id} className="p-4 border rounded hover:bg-gray-50">
+                    <p><strong>De:</strong> {email.from_email}</p>
+                    <p><strong>Asunto:</strong> {email.subject}</p>
+                    <p>{email.body}</p>
+                    <p className="text-sm text-gray-500">{new Date(email.sent_at).toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {user && view === 'compose' && (
+            <div className="w-full max-w-4xl bg-white p-6 rounded-lg shadow-md">
+              <h2 className="text-xl font-semibold mb-4">Redactar Correo</h2>
+              <input
+                type="email"
+                placeholder="Para (ej: usuario@zephiryx.com)"
+                value={emailData.to}
+                onChange={(e) => setEmailData({ ...emailData, to: e.target.value })}
+                className="w-full p-2 mb-2 border rounded"
+              />
+              <input
+                type="text"
+                placeholder="Asunto"
+                value={emailData.subject}
+                onChange={(e) => setEmailData({ ...emailData, subject: e.target.value })}
+                className="w-full p-2 mb-2 border rounded"
+              />
+              <textarea
+                placeholder="Mensaje"
+                value={emailData.body}
+                onChange={(e) => setEmailData({ ...emailData, body: e.target.value })}
+                className="w-full p-2 mb-2 border rounded h-40"
+              />
+              <div className="flex space-x-2">
+                <button onClick={sendEmail} className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
+                  Enviar
+                </button>
+                <button
+                  onClick={() => setView('inbox')}
+                  className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
