@@ -75,9 +75,20 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Check if prefix is available
+app.get('/api/check_prefix', async (req, res) => {
+  const { prefix } = req.query;
+  try {
+    const result = await pool.query('SELECT * FROM accounts WHERE email = $1', [`${prefix}@${DOMAIN}`]);
+    res.json({ available: result.rows.length === 0 });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al comprobar prefijo' });
+  }
+});
+
 // Register
 app.post('/api/register', async (req, res) => {
-  const { username, password, display_name } = req.body;
+  const { username, password, display_name, profile_picture } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
   }
@@ -89,14 +100,15 @@ app.post('/api/register', async (req, res) => {
     );
     const userId = userResult.rows[0].id;
     await pool.query(
-      'INSERT INTO profiles (user_id, display_name) VALUES ($1, $2)',
-      [userId, display_name || username]
+      'INSERT INTO profiles (user_id, display_name, profile_picture) VALUES ($1, $2, $3)',
+      [userId, display_name || username, profile_picture || null]
     );
     await pool.query(
       'INSERT INTO accounts (user_id, email) VALUES ($1, $2)',
       [userId, `${username}@${DOMAIN}`]
     );
-    res.status(201).json({ message: 'Usuario registrado' });
+    const token = jwt.sign({ username, userId }, SECRET_KEY, { expiresIn: '1h' });
+    res.status(201).json({ message: 'Usuario registrado', token });
   } catch (error) {
     res.status(400).json({ error: 'Error al registrar: ' + error.message });
   }
@@ -158,14 +170,20 @@ app.get('/api/accounts', authenticateToken, async (req, res) => {
   }
 });
 
-// Add account
+// Add account (login and add to user)
 app.post('/api/accounts', authenticateToken, async (req, res) => {
-  const { email } = req.body;
+  const { email, password } = req.body;
   if (!email.endsWith(`@${DOMAIN}`)) {
     return res.status(400).json({ error: 'Correo debe ser del dominio @zephiryx.com' });
   }
   try {
-    await pool.query('INSERT INTO accounts (user_id, email) VALUES ($1, $2)', [req.user.userId, email]);
+    const username = email.split('@')[0];
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    const user = result.rows[0];
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Credenciales inválidas para la cuenta' });
+    }
+    await pool.query('INSERT INTO accounts (user_id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.user.userId, email]);
     res.status(201).json({ message: 'Cuenta añadida' });
   } catch (error) {
     res.status(400).json({ error: 'Error al añadir cuenta: ' + error.message });
@@ -204,6 +222,9 @@ app.get('/api/emails/:type', authenticateToken, async (req, res) => {
 app.post('/api/emails', authenticateToken, async (req, res) => {
   const { to, subject, body, from, is_draft } = req.body;
   try {
+    if (!to || !from) {
+      return res.status(400).json({ error: 'De y Para son requeridos' });
+    }
     if (!to.endsWith(`@${DOMAIN}`) || !from.endsWith(`@${DOMAIN}`)) {
       return res.status(400).json({ error: 'Solo se permiten correos dentro del dominio @zephiryx.com' });
     }
