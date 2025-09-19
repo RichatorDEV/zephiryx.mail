@@ -5,9 +5,11 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080; // Cambiado a 8080, pero Railway usa puerto externo
 
-app.use(cors());
+app.use(cors({
+  origin: 'https://unlockedvalle.github.io/zephiryx.mail/' // Reemplaza con tu URL de GitHub Pages
+}));
 app.use(express.json());
 
 const pool = new Pool({
