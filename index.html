@@ -16,27 +16,69 @@
     const { useState, useEffect } = React;
 
     const App = () => {
-      const API_URL = 'https://zephiryxmail-production.up.railway.app'; // Backend en Railway
+      const API_URL = 'https://zephiryxmail-production.up.railway.app';
       const [user, setUser] = useState(null);
+      const [accounts, setAccounts] = useState([]);
+      const [currentAccount, setCurrentAccount] = useState(null);
+      const [profile, setProfile] = useState(null);
       const [emails, setEmails] = useState([]);
       const [view, setView] = useState('login');
-      const [emailData, setEmailData] = useState({ to: '', subject: '', body: '' });
-      const [credentials, setCredentials] = useState({ username: '', password: '' });
+      const [emailData, setEmailData] = useState({ to: '', subject: '', body: '', is_draft: false });
+      const [credentials, setCredentials] = useState({ username: '', password: '', display_name: '' });
+      const [profileData, setProfileData] = useState({ display_name: '', profile_picture: '', password: '' });
 
       useEffect(() => {
         if (user && view === 'inbox') {
-          const interval = setInterval(fetchEmails, 5000);
+          fetchAccounts();
+          fetchProfile();
+          fetchEmails('inbox');
+          const interval = setInterval(() => fetchEmails('inbox'), 5000);
           return () => clearInterval(interval);
         }
-      }, [user, view]);
+      }, [user, view, currentAccount]);
+
+      const fetchAccounts = async () => {
+        try {
+          const response = await axios.get(`${API_URL}/api/accounts`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          setAccounts(response.data);
+          if (!currentAccount && response.data.length > 0) {
+            setCurrentAccount(response.data[0].email);
+          }
+        } catch (error) {
+          console.error('Error al cargar cuentas');
+        }
+      };
+
+      const fetchProfile = async () => {
+        try {
+          const response = await axios.get(`${API_URL}/api/profile`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          setProfile(response.data);
+        } catch (error) {
+          console.error('Error al cargar perfil');
+        }
+      };
+
+      const fetchEmails = async (type) => {
+        try {
+          const response = await axios.get(`${API_URL}/api/emails/${type}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          setEmails(response.data);
+        } catch (error) {
+          console.error('Error al cargar correos');
+        }
+      };
 
       const login = async () => {
         try {
           const response = await axios.post(`${API_URL}/api/login`, credentials);
           localStorage.setItem('token', response.data.token);
-          setUser({ username: credentials.username, email: `${credentials.username}@zephiryx.com` });
+          setUser({ username: credentials.username, userId: response.data.userId });
           setView('inbox');
-          fetchEmails();
         } catch (error) {
           alert('Error al iniciar sesión: ' + (error.response?.data?.error || error.message));
         }
@@ -46,20 +88,37 @@
         try {
           await axios.post(`${API_URL}/api/register`, credentials);
           alert('Usuario registrado. Inicia sesión.');
-          setCredentials({ username: '', password: '' });
+          setCredentials({ username: '', password: '', display_name: '' });
         } catch (error) {
           alert('Error al registrar: ' + (error.response?.data?.error || error.message));
         }
       };
 
-      const fetchEmails = async () => {
+      const updateProfile = async () => {
         try {
-          const response = await axios.get(`${API_URL}/api/emails`, {
+          await axios.put(`${API_URL}/api/profile`, profileData, {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
           });
-          setEmails(response.data);
+          alert('Perfil actualizado');
+          fetchProfile();
+          setProfileData({ display_name: '', profile_picture: '', password: '' });
         } catch (error) {
-          console.error('Error al cargar correos');
+          alert('Error al actualizar perfil: ' + (error.response?.data?.error || error.message));
+        }
+      };
+
+      const addAccount = async () => {
+        const newEmail = prompt('Introduce el nuevo correo (ej: nuevo@zephiryx.com)');
+        if (newEmail) {
+          try {
+            await axios.post(`${API_URL}/api/accounts`, { email: newEmail }, {
+              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+            alert('Cuenta añadida');
+            fetchAccounts();
+          } catch (error) {
+            alert('Error al añadir cuenta: ' + (error.response?.data?.error || error.message));
+          }
         }
       };
 
@@ -67,13 +126,13 @@
         try {
           await axios.post(`${API_URL}/api/emails`, {
             ...emailData,
-            from: user.email
+            from: currentAccount
           }, {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
           });
-          setEmailData({ to: '', subject: '', body: '' });
+          setEmailData({ to: '', subject: '', body: '', is_draft: false });
           setView('inbox');
-          fetchEmails();
+          fetchEmails('inbox');
         } catch (error) {
           alert('Error al enviar correo: ' + (error.response?.data?.error || error.message));
         }
@@ -82,103 +141,281 @@
       const logout = () => {
         localStorage.removeItem('token');
         setUser(null);
+        setCurrentAccount(null);
         setView('login');
       };
 
       return (
-        <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4">
-          <h1 className="text-3xl font-bold mb-4">Zephiryx Mail</h1>
-          {view === 'login' && !user && (
-            <div className="w-full max-w-md bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Iniciar Sesión</h2>
-              <input
-                type="text"
-                placeholder="Nombre de usuario"
-                value={credentials.username}
-                onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
-                className="w-full p-2 mb-2 border rounded"
-              />
-              <input
-                type="password"
-                placeholder="Contraseña"
-                value={credentials.password}
-                onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-                className="w-full p-2 mb-2 border rounded"
-              />
-              <div className="flex space-x-2">
-                <button onClick={login} className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
-                  Iniciar Sesión
-                </button>
-                <button onClick={register} className="bg-green-500 text-white p-2 rounded hover:bg-green-600">
-                  Registrarse
-                </button>
+        <div className="min-h-screen bg-gray-100 flex">
+          {/* Sidebar */}
+          {user && (
+            <div className="w-64 bg-white shadow-md p-4">
+              <div className="flex items-center mb-6">
+                <img
+                  src={profile?.profile_picture || 'https://via.placeholder.com/40'}
+                  alt="Profile"
+                  className="w-10 h-10 rounded-full mr-2"
+                />
+                <div>
+                  <p className="font-semibold">{profile?.display_name || user.username}</p>
+                  <select
+                    value={currentAccount || ''}
+                    onChange={(e) => setCurrentAccount(e.target.value)}
+                    className="text-sm text-gray-600"
+                  >
+                    {accounts.map((account) => (
+                      <option key={account.email} value={account.email}>{account.email}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
+              <button
+                onClick={() => setView('compose')}
+                className="w-full bg-blue-600 text-white p-2 rounded mb-4 hover:bg-blue-700"
+              >
+                Redactar
+              </button>
+              <nav>
+                <button
+                  onClick={() => { setView('inbox'); fetchEmails('inbox'); }}
+                  className={`w-full text-left p-2 ${view === 'inbox' ? 'bg-blue-100' : ''} hover:bg-gray-100`}
+                >
+                  Bandeja de entrada
+                </button>
+                <button
+                  onClick={() => { setView('sent'); fetchEmails('sent'); }}
+                  className={`w-full text-left p-2 ${view === 'sent' ? 'bg-blue-100' : ''} hover:bg-gray-100`}
+                >
+                  Enviados
+                </button>
+                <button
+                  onClick={() => { setView('spam'); fetchEmails('spam'); }}
+                  className={`w-full text-left p-2 ${view === 'spam' ? 'bg-blue-100' : ''} hover:bg-gray-100`}
+                >
+                  Spam
+                </button>
+                <button
+                  onClick={() => { setView('drafts'); fetchEmails('drafts'); }}
+                  className={`w-full text-left p-2 ${view === 'drafts' ? 'bg-blue-100' : ''} hover:bg-gray-100`}
+                >
+                  Borradores
+                </button>
+                <button
+                  onClick={() => setView('profile')}
+                  className={`w-full text-left p-2 ${view === 'profile' ? 'bg-blue-100' : ''} hover:bg-gray-100`}
+                >
+                  Perfil
+                </button>
+                <button
+                  onClick={addAccount}
+                  className="w-full text-left p-2 hover:bg-gray-100"
+                >
+                  Añadir cuenta
+                </button>
+                <button
+                  onClick={logout}
+                  className="w-full text-left p-2 text-red-600 hover:bg-gray-100"
+                >
+                  Cerrar sesión
+                </button>
+              </nav>
             </div>
           )}
-          {user && view === 'inbox' && (
-            <div className="w-full max-w-4xl bg-white p-6 rounded-lg shadow-md">
-              <div className="flex justify-between mb-4">
-                <h2 className="text-xl font-semibold">Bandeja de Entrada ({user.email})</h2>
-                <div>
+          {/* Main content */}
+          <div className="flex-1 p-6">
+            <h1 className="text-3xl font-bold mb-6 text-gray-800">Zephiryx Mail</h1>
+            {view === 'login' && !user && (
+              <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Iniciar Sesión / Registrarse</h2>
+                <input
+                  type="text"
+                  placeholder="Nombre de usuario"
+                  value={credentials.username}
+                  onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="password"
+                  placeholder="Contraseña"
+                  value={credentials.password}
+                  onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Nombre para mostrar (opcional)"
+                  value={credentials.display_name}
+                  onChange={(e) => setCredentials({ ...credentials, display_name: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex space-x-2">
                   <button
-                    onClick={() => setView('compose')}
-                    className="bg-blue-500 text-white p-2 rounded mr-2 hover:bg-blue-600"
+                    onClick={login}
+                    className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
                   >
-                    Redactar
+                    Iniciar Sesión
                   </button>
-                  <button onClick={logout} className="bg-red-500 text-white p-2 rounded hover:bg-red-600">
-                    Cerrar Sesión
+                  <button
+                    onClick={register}
+                    className="bg-green-600 text-white p-2 rounded hover:bg-green-700"
+                  >
+                    Registrarse
                   </button>
                 </div>
               </div>
-              <div className="space-y-2">
-                {emails.map((email) => (
-                  <div key={email.id} className="p-4 border rounded hover:bg-gray-50">
-                    <p><strong>De:</strong> {email.from_email}</p>
-                    <p><strong>Asunto:</strong> {email.subject}</p>
-                    <p>{email.body}</p>
-                    <p className="text-sm text-gray-500">{new Date(email.sent_at).toLocaleString()}</p>
-                  </div>
-                ))}
+            )}
+            {user && view === 'inbox' && (
+              <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Bandeja de Entrada ({currentAccount})</h2>
+                <div className="space-y-2">
+                  {emails.map((email) => (
+                    <div key={email.id} className="p-4 border rounded hover:bg-gray-50">
+                      <p><strong>De:</strong> {email.from_email}</p>
+                      <p><strong>Asunto:</strong> {email.subject}</p>
+                      <p>{email.body}</p>
+                      <p className="text-sm text-gray-500">{new Date(email.sent_at).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-          {user && view === 'compose' && (
-            <div className="w-full max-w-4xl bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold mb-4">Redactar Correo</h2>
-              <input
-                type="email"
-                placeholder="Para (ej: usuario@zephiryx.com)"
-                value={emailData.to}
-                onChange={(e) => setEmailData({ ...emailData, to: e.target.value })}
-                className="w-full p-2 mb-2 border rounded"
-              />
-              <input
-                type="text"
-                placeholder="Asunto"
-                value={emailData.subject}
-                onChange={(e) => setEmailData({ ...emailData, subject: e.target.value })}
-                className="w-full p-2 mb-2 border rounded"
-              />
-              <textarea
-                placeholder="Mensaje"
-                value={emailData.body}
-                onChange={(e) => setEmailData({ ...emailData, body: e.target.value })}
-                className="w-full p-2 mb-2 border rounded h-40"
-              />
-              <div className="flex space-x-2">
-                <button onClick={sendEmail} className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
-                  Enviar
-                </button>
-                <button
-                  onClick={() => setView('inbox')}
-                  className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
+            )}
+            {user && view === 'sent' && (
+              <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Enviados ({currentAccount})</h2>
+                <div className="space-y-2">
+                  {emails.map((email) => (
+                    <div key={email.id} className="p-4 border rounded hover:bg-gray-50">
+                      <p><strong>Para:</strong> {email.to_email}</p>
+                      <p><strong>Asunto:</strong> {email.subject}</p>
+                      <p>{email.body}</p>
+                      <p className="text-sm text-gray-500">{new Date(email.sent_at).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {user && view === 'spam' && (
+              <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Spam ({currentAccount})</h2>
+                <div className="space-y-2">
+                  {emails.map((email) => (
+                    <div key={email.id} className="p-4 border rounded hover:bg-gray-50">
+                      <p><strong>De:</strong> {email.from_email}</p>
+                      <p><strong>Asunto:</strong> {email.subject}</p>
+                      <p>{email.body}</p>
+                      <p className="text-sm text-gray-500">{new Date(email.sent_at).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {user && view === 'drafts' && (
+              <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Borradores ({currentAccount})</h2>
+                <div className="space-y-2">
+                  {emails.map((email) => (
+                    <div key={email.id} className="p-4 border rounded hover:bg-gray-50">
+                      <p><strong>Para:</strong> {email.to_email}</p>
+                      <p><strong>Asunto:</strong> {email.subject}</p>
+                      <p>{email.body}</p>
+                      <p className="text-sm text-gray-500">{new Date(email.sent_at).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {user && view === 'compose' && (
+              <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Redactar Correo</h2>
+                <select
+                  value={emailData.from || currentAccount}
+                  onChange={(e) => setEmailData({ ...emailData, from: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded"
                 >
-                  Cancelar
+                  {accounts.map((account) => (
+                    <option key={account.email} value={account.email}>{account.email}</option>
+                  ))}
+                </select>
+                <input
+                  type="email"
+                  placeholder="Para (ej: usuario@zephiryx.com)"
+                  value={emailData.to}
+                  onChange={(e) => setEmailData({ ...emailData, to: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Asunto"
+                  value={emailData.subject}
+                  onChange={(e) => setEmailData({ ...emailData, subject: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <textarea
+                  placeholder="Mensaje"
+                  value={emailData.body}
+                  onChange={(e) => setEmailData({ ...emailData, body: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded h-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => { setEmailData({ ...emailData, is_draft: false }); sendEmail(); }}
+                    className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
+                  >
+                    Enviar
+                  </button>
+                  <button
+                    onClick={() => { setEmailData({ ...emailData, is_draft: true }); sendEmail(); }}
+                    className="bg-gray-600 text-white p-2 rounded hover:bg-gray-700"
+                  >
+                    Guardar como borrador
+                  </button>
+                  <button
+                    onClick={() => setView('inbox')}
+                    className="bg-red-600 text-white p-2 rounded hover:bg-red-700"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+            {user && view === 'profile' && (
+              <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-semibold mb-4">Perfil</h2>
+                <img
+                  src={profile?.profile_picture || 'https://via.placeholder.com/100'}
+                  alt="Profile"
+                  className="w-24 h-24 rounded-full mx-auto mb-4"
+                />
+                <input
+                  type="text"
+                  placeholder="Nombre para mostrar"
+                  value={profileData.display_name}
+                  onChange={(e) => setProfileData({ ...profileData, display_name: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="url"
+                  placeholder="URL de la foto de perfil"
+                  value={profileData.profile_picture}
+                  onChange={(e) => setProfileData({ ...profileData, profile_picture: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="password"
+                  placeholder="Nueva contraseña (opcional)"
+                  value={profileData.password}
+                  onChange={(e) => setProfileData({ ...profileData, password: e.target.value })}
+                  className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={updateProfile}
+                  className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
+                >
+                  Actualizar Perfil
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       );
     };
