@@ -8,7 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jwt-decode@4.0.0/build/jwt-decode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jwt-decode@3.1.2/build/jwt-decode.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-family: 'Roboto', sans-serif; }
@@ -20,6 +20,21 @@
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect } = React;
+
+    // Manual JWT decoder as fallback
+    const decodeJwtFallback = (token) => {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => 
+          '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        ).join(''));
+        return JSON.parse(jsonPayload);
+      } catch (error) {
+        console.error('Error in fallback JWT decode:', error);
+        return null;
+      }
+    };
 
     const App = () => {
       const API_URL = 'https://zephiryxmail-production.up.railway.app';
@@ -38,22 +53,28 @@
       const [prefixAvailable, setPrefixAvailable] = useState(null);
       const [addAccountData, setAddAccountData] = useState({ email: '', password: '' });
 
-      // Persist session
+      // Persist session with delay to ensure jwt-decode is loaded
       useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token && window.jwtDecode) {
-          try {
-            // Use window.jwtDecode instead of window.jwt_decode
-            const decoded = window.jwtDecode(token);
-            setUser({ username: decoded.username, userId: decoded.userId });
-            setView('inbox');
-          } catch (error) {
-            console.error('Error decoding token:', error);
-            localStorage.removeItem('token');
+        const initializeSession = async () => {
+          // Wait briefly to ensure jwt-decode script is loaded
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const token = localStorage.getItem('token');
+          if (token) {
+            try {
+              const decoded = window.jwtDecode ? window.jwtDecode(token) : decodeJwtFallback(token);
+              if (decoded && decoded.username && decoded.userId) {
+                setUser({ username: decoded.username, userId: decoded.userId });
+                setView('inbox');
+              } else {
+                throw new Error('Invalid token payload');
+              }
+            } catch (error) {
+              console.error('Error decoding token:', error);
+              localStorage.removeItem('token');
+            }
           }
-        } else if (!window.jwtDecode) {
-          console.error('jwtDecode not loaded');
-        }
+        };
+        initializeSession();
       }, []);
 
       // Fetch accounts, profile, and emails
@@ -127,13 +148,13 @@
             password: credentials.password
           });
           localStorage.setItem('token', response.data.token);
-          if (window.jwtDecode) {
-            const decoded = window.jwtDecode(response.data.token);
+          const decoded = window.jwtDecode ? window.jwtDecode(response.data.token) : decodeJwtFallback(response.data.token);
+          if (decoded && decoded.username && decoded.userId) {
             setUser({ username: decoded.username, userId: decoded.userId });
             setCredentials({ username: '', password: '' });
             setView('inbox');
           } else {
-            throw new Error('jwtDecode not loaded');
+            throw new Error('Invalid token payload');
           }
         } catch (error) {
           alert('Error al iniciar sesión: ' + (error.response?.data?.error || error.message));
@@ -154,8 +175,8 @@
             profile_picture 
           });
           localStorage.setItem('token', response.data.token);
-          if (window.jwtDecode) {
-            const decoded = window.jwtDecode(response.data.token);
+          const decoded = window.jwtDecode ? window.jwtDecode(response.data.token) : decodeJwtFallback(response.data.token);
+          if (decoded && decoded.username && decoded.userId) {
             setUser({ username: decoded.username, userId: decoded.userId });
             setRegistrationData({ display_name: '', last_name: '', prefix: '', profile_picture: '' });
             setCredentials({ username: '', password: '' });
@@ -163,7 +184,7 @@
             setShowRegister(false);
             setRegistrationStep(1);
           } else {
-            throw new Error('jwtDecode not loaded');
+            throw new Error('Invalid token payload');
           }
         } catch (error) {
           alert('Error al registrar: ' + (error.response?.data?.error || error.message));
