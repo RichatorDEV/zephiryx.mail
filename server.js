@@ -5,16 +5,18 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 
 const app = express();
-const port = process.env.PORT || 8080; // Cambiado a 8080, pero Railway usa puerto externo
+const port = process.env.PORT || 8080;
 
 app.use(cors({
-  origin: 'https://unlockedvalle.github.io/zephiryx.mail/' // Reemplaza con tu URL de GitHub Pages
+  origin: 'https://unlockedvalle.github.io/zephiryx.mail', // Tu URL de GitHub Pages
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // For Railway Postgres
+  ssl: { rejectUnauthorized: false }
 });
 
 const SECRET_KEY = process.env.SECRET_KEY || 'zephiryx-secret-key';
