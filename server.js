@@ -8,9 +8,10 @@ const app = express();
 const port = process.env.PORT || 8080;
 
 app.use(cors({
-  origin: 'https://unlockedvalle.github.io/zephiryx.mail', // Tu URL de GitHub Pages
+  origin: ['https://unlockedvalle.github.io', 'https://unlockedvalle.github.io/zephiryx.mail'],
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 app.use(express.json());
 
