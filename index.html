@@ -16,6 +16,7 @@
     const { useState, useEffect } = React;
 
     const App = () => {
+      const API_URL = 'https://zephiryxmail-production.up.railway.app'; // Backend en Railway
       const [user, setUser] = useState(null);
       const [emails, setEmails] = useState([]);
       const [view, setView] = useState('login');
@@ -31,7 +32,7 @@
 
       const login = async () => {
         try {
-          const response = await axios.post('/api/login', credentials);
+          const response = await axios.post(`${API_URL}/api/login`, credentials);
           localStorage.setItem('token', response.data.token);
           setUser({ username: credentials.username, email: `${credentials.username}@zephiryx.com` });
           setView('inbox');
@@ -43,7 +44,7 @@
 
       const register = async () => {
         try {
-          await axios.post('/api/register', credentials);
+          await axios.post(`${API_URL}/api/register`, credentials);
           alert('Usuario registrado. Inicia sesión.');
           setCredentials({ username: '', password: '' });
         } catch (error) {
@@ -53,7 +54,7 @@
 
       const fetchEmails = async () => {
         try {
-          const response = await axios.get('/api/emails', {
+          const response = await axios.get(`${API_URL}/api/emails`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
           });
           setEmails(response.data);
@@ -64,7 +65,7 @@
 
       const sendEmail = async () => {
         try {
-          await axios.post('/api/emails', {
+          await axios.post(`${API_URL}/api/emails`, {
             ...emailData,
             from: user.email
           }, {
