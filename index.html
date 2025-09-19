@@ -41,16 +41,18 @@
       // Persist session
       useEffect(() => {
         const token = localStorage.getItem('token');
-        if (token) {
+        if (token && window.jwtDecode) {
           try {
-            // Use window.jwt_decode to ensure the global function is accessed
-            const decoded = window.jwt_decode(token);
+            // Use window.jwtDecode instead of window.jwt_decode
+            const decoded = window.jwtDecode(token);
             setUser({ username: decoded.username, userId: decoded.userId });
             setView('inbox');
           } catch (error) {
             console.error('Error decoding token:', error);
             localStorage.removeItem('token');
           }
+        } else if (!window.jwtDecode) {
+          console.error('jwtDecode not loaded');
         }
       }, []);
 
@@ -125,10 +127,14 @@
             password: credentials.password
           });
           localStorage.setItem('token', response.data.token);
-          const decoded = window.jwt_decode(response.data.token);
-          setUser({ username: decoded.username, userId: decoded.userId });
-          setCredentials({ username: '', password: '' });
-          setView('inbox');
+          if (window.jwtDecode) {
+            const decoded = window.jwtDecode(response.data.token);
+            setUser({ username: decoded.username, userId: decoded.userId });
+            setCredentials({ username: '', password: '' });
+            setView('inbox');
+          } else {
+            throw new Error('jwtDecode not loaded');
+          }
         } catch (error) {
           alert('Error al iniciar sesión: ' + (error.response?.data?.error || error.message));
         }
@@ -148,13 +154,17 @@
             profile_picture 
           });
           localStorage.setItem('token', response.data.token);
-          const decoded = window.jwt_decode(response.data.token);
-          setUser({ username: decoded.username, userId: decoded.userId });
-          setRegistrationData({ display_name: '', last_name: '', prefix: '', profile_picture: '' });
-          setCredentials({ username: '', password: '' });
-          setView('inbox');
-          setShowRegister(false);
-          setRegistrationStep(1);
+          if (window.jwtDecode) {
+            const decoded = window.jwtDecode(response.data.token);
+            setUser({ username: decoded.username, userId: decoded.userId });
+            setRegistrationData({ display_name: '', last_name: '', prefix: '', profile_picture: '' });
+            setCredentials({ username: '', password: '' });
+            setView('inbox');
+            setShowRegister(false);
+            setRegistrationStep(1);
+          } else {
+            throw new Error('jwtDecode not loaded');
+          }
         } catch (error) {
           alert('Error al registrar: ' + (error.response?.data?.error || error.message));
         }
@@ -521,7 +531,7 @@
                         </button>
                         <button
                           onClick={() => setView('inbox')}
-                          className="bg-red-600 text-white p-3 rounded-3xl hover:bg-blue-700 modern-button"
+                          className="bg-red-600 text-white p-3 rounded-3xl hover:bg-red-700 modern-button"
                         >
                           Cancelar
                         </button>
