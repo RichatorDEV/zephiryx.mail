@@ -14,9 +14,10 @@ const pool = new Pool({
 
 const SECRET_KEY = process.env.SECRET_KEY || 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6';
 
-// Initialize database tables
+// Initialize database tables and columns
 const initializeDatabase = async () => {
   try {
+    // Create tables if they don't exist
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -24,6 +25,8 @@ const initializeDatabase = async () => {
         password_hash VARCHAR(255) NOT NULL
       );
     `);
+    console.log('Table users initialized');
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS profiles (
         user_id INTEGER PRIMARY KEY REFERENCES users(id),
@@ -31,6 +34,8 @@ const initializeDatabase = async () => {
         profile_picture VARCHAR(255)
       );
     `);
+    console.log('Table profiles initialized');
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS accounts (
         id SERIAL PRIMARY KEY,
@@ -38,6 +43,8 @@ const initializeDatabase = async () => {
         email VARCHAR(255) UNIQUE NOT NULL
       );
     `);
+    console.log('Table accounts initialized');
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS emails (
         id SERIAL PRIMARY KEY,
@@ -45,20 +52,60 @@ const initializeDatabase = async () => {
         to_email VARCHAR(255) NOT NULL,
         subject VARCHAR(255),
         body TEXT,
-        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        is_spam BOOLEAN DEFAULT FALSE,
-        is_draft BOOLEAN DEFAULT FALSE,
-        is_sent BOOLEAN DEFAULT FALSE
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    console.log('Database tables initialized successfully');
+    console.log('Table emails initialized');
+
+    // Check and add missing columns to emails table
+    const columnsResult = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'emails';
+    `);
+    const existingColumns = columnsResult.rows.map(row => row.column_name);
+
+    if (!existingColumns.includes('is_spam')) {
+      await pool.query('ALTER TABLE emails ADD COLUMN is_spam BOOLEAN DEFAULT FALSE;');
+      console.log('Added column is_spam to emails table');
+    } else {
+      console.log('Column is_spam already exists in emails table');
+    }
+
+    if (!existingColumns.includes('is_draft')) {
+      await pool.query('ALTER TABLE emails ADD COLUMN is_draft BOOLEAN DEFAULT FALSE;');
+      console.log('Added column is_draft to emails table');
+    } else {
+      console.log('Column is_draft already exists in emails table');
+    }
+
+    if (!existingColumns.includes('is_sent')) {
+      await pool.query('ALTER TABLE emails ADD COLUMN is_sent BOOLEAN DEFAULT FALSE;');
+      console.log('Added column is_sent to emails table');
+    } else {
+      console.log('Column is_sent already exists in emails table');
+    }
+
+    console.log('Database tables and columns initialized successfully');
   } catch (error) {
-    console.error('Error initializing database:', error);
+    console.error('Error initializing database:', error.message, error.stack);
+    throw error; // Re-throw to prevent server from starting with an invalid database
   }
 };
 
-// Run database initialization
-initializeDatabase();
+// Run database initialization and ensure server only starts if successful
+(async () => {
+  try {
+    await initializeDatabase();
+    const PORT = process.env.PORT || 8080;
+    app.listen(PORT, () => {
+      console.log(`Servidor corriendo en puerto ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server due to database initialization error:', error.message);
+    process.exit(1);
+  }
+})();
 
 app.post('/api/register', async (req, res) => {
   const { username, password, display_name, profile_picture } = req.body;
@@ -80,7 +127,8 @@ app.post('/api/register', async (req, res) => {
     const token = jwt.sign({ userId, username }, SECRET_KEY, { expiresIn: '1h' });
     res.json({ token });
   } catch (error) {
-    res.status(400).json({ error: 'Error al registrar usuario' });
+    console.error('Error in /api/register:', error.message, error.stack);
+    res.status(400).json({ error: 'Error al registrar usuario: ' + error.message });
   }
 });
 
@@ -96,7 +144,8 @@ app.post('/api/login', async (req, res) => {
       res.status(401).json({ error: 'Credenciales inválidas' });
     }
   } catch (error) {
-    res.status(400).json({ error: 'Error al iniciar sesión' });
+    console.error('Error in /api/login:', error.message, error.stack);
+    res.status(400).json({ error: 'Error al iniciar sesión: ' + error.message });
   }
 });
 
@@ -106,7 +155,8 @@ app.get('/api/check_prefix', async (req, res) => {
     const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [prefix]);
     res.json({ available: result.rows.length === 0 });
   } catch (error) {
-    res.status(400).json({ error: 'Error al verificar prefijo' });
+    console.error('Error in /api/check_prefix:', error.message, error.stack);
+    res.status(400).json({ error: 'Error al verificar prefijo: ' + error.message });
   }
 });
 
@@ -115,9 +165,13 @@ app.get('/api/profile', async (req, res) => {
   try {
     const decoded = jwt.verify(token, SECRET_KEY);
     const result = await pool.query('SELECT display_name, profile_picture FROM profiles WHERE user_id = $1', [decoded.userId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Perfil no encontrado' });
+    }
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(401).json({ error: 'Token inválido' });
+    console.error('Error in /api/profile:', error.message, error.stack);
+    res.status(401).json({ error: 'Token inválido: ' + error.message });
   }
 });
 
@@ -145,7 +199,8 @@ app.put('/api/profile', async (req, res) => {
     }
     res.json({ message: 'Perfil actualizado' });
   } catch (error) {
-    res.status(400).json({ error: 'Error al actualizar perfil' });
+    console.error('Error in /api/profile PUT:', error.message, error.stack);
+    res.status(400).json({ error: 'Error al actualizar perfil: ' + error.message });
   }
 });
 
@@ -156,7 +211,8 @@ app.get('/api/accounts', async (req, res) => {
     const result = await pool.query('SELECT email FROM accounts WHERE user_id = $1', [decoded.userId]);
     res.json(result.rows);
   } catch (error) {
-    res.status(401).json({ error: 'Token inválido' });
+    console.error('Error in /api/accounts:', error.message, error.stack);
+    res.status(401).json({ error: 'Token inválido: ' + error.message });
   }
 });
 
@@ -171,7 +227,8 @@ app.post('/api/accounts', async (req, res) => {
     await pool.query('INSERT INTO accounts (user_id, email) VALUES ($1, $2)', [decoded.userId, email]);
     res.json({ message: 'Cuenta añadida' });
   } catch (error) {
-    res.status(400).json({ error: 'Error al añadir cuenta' });
+    console.error('Error in /api/accounts POST:', error.message, error.stack);
+    res.status(400).json({ error: 'Error al añadir cuenta: ' + error.message });
   }
 });
 
@@ -188,6 +245,7 @@ app.post('/api/emails', async (req, res) => {
     );
     res.json({ message: is_draft ? 'Borrador guardado' : 'Correo enviado' });
   } catch (error) {
+    console.error('Error in /api/emails POST:', error.message, error.stack);
     res.status(400).json({ error: 'Error al enviar correo: ' + error.message });
   }
 });
@@ -229,11 +287,7 @@ app.get('/api/emails/:type', async (req, res) => {
     const result = await pool.query(query, values);
     res.json(result.rows);
   } catch (error) {
-    res.status(400).json({ error: 'Error al cargar correos' });
+    console.error('Error in /api/emails/:type:', error.message, error.stack);
+    res.status(400).json({ error: 'Error al cargar correos: ' + error.message });
   }
-});
-
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
